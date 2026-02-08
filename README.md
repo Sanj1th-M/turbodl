@@ -13,8 +13,8 @@ A secure and efficient video downloader application built with FastAPI, yt-dlp, 
 1.  **Clone the repository:**
 
     ```bash
-    git clone <repository_url>
-    cd project-dl
+    git clone https://github.com/Sanj1th-M/turbodl.git
+    cd turbodl
     ```
 
 2.  **Create a virtual environment:**
