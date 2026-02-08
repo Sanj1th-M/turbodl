@@ -27,9 +27,9 @@ from security import validate_url, sanitize_filename, safe_subprocess_run, logge
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("BoltLoad")
+logger = logging.getLogger("TurboDL")
 
-app = FastAPI(title="BoltLoad Downloader")
+app = FastAPI(title="TurboDL Downloader")
 
 @app.on_event("startup")
 async def startup_event():
