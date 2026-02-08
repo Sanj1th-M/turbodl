@@ -38,9 +38,8 @@ pythonv/
 
 # Application Specific
 temp_downloads/
-ffmpeg.exe
-video_downloader/ffmpeg.exe
 video_downloader/temp_downloads/
+*.exe
 
 # IDEs
 .idea/
