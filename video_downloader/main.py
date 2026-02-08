@@ -7,12 +7,13 @@ import asyncio
 import json
 import shutil
 from typing import Optional, List, Dict
-from datetime import timedelta
+
 from fastapi import FastAPI, Form, Request, HTTPException, BackgroundTasks, Depends, Response, status
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+
+
 from pydantic import BaseModel, HttpUrl
 import yt_dlp
 
@@ -21,8 +22,8 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 # Import Security Layer
-from security import validate_url, sanitize_filename, safe_subprocess_run, verify_password, get_password_hash, create_access_token, SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES, logger as sec_logger
-from jose import JWTError, jwt
+
+from security import validate_url, sanitize_filename, safe_subprocess_run, logger as sec_logger
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -49,8 +50,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # Templates
 templates = Jinja2Templates(directory="templates")
 
-# Auth Scheme
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+
 
 # Constants
 TEMP_DIR = "temp_downloads"
@@ -90,92 +90,27 @@ class DownloadRequest(BaseModel):
 # Jobs storage (In-memory for simplicity)
 processing_jobs: Dict[str, Dict] = {}
 
-# Mock User DB
-users_db = {
-    "admin": {
-        "username": "admin",
-        "hashed_password": get_password_hash("secret"),
-        "disabled": False,
-    }
-}
-
 # --- DEPENDENCIES ---
-async def get_current_user(token: str = Depends(oauth2_scheme)):
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None:
-            raise credentials_exception
-    except JWTError:
-        raise credentials_exception
-    
-    user = users_db.get(username)
-    if user is None:
-        raise credentials_exception
-    return user
 
-async def get_current_user_optional(request: Request):
-    token = request.cookies.get("access_token")
-    if not token:
-        return None
-    try:
-        # Remove Bearer if present
-        if token.startswith("Bearer "):
-            token = token.split(" ")[1]
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        return users_db.get(username)
-    except JWTError:
-        return None
+
 
 # --- ROUTES ---
 
 @app.get("/", response_class=HTMLResponse)
-async def read_root(request: Request, user: dict = Depends(get_current_user_optional)):
-    if not user:
-        return RedirectResponse(url="/login")
-    return templates.TemplateResponse("index.html", {"request": request, "user": user})
+async def read_root(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
 
-@app.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request})
 
-@app.post("/login")
-async def login(form_data: OAuth2PasswordRequestForm = Depends()):
-    user = users_db.get(form_data.username)
-    if not user or not verify_password(form_data.password, user["hashed_password"]):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        data={"sub": user["username"]}, expires_delta=access_token_expires
-    )
-    response = JSONResponse(content={"access_token": access_token, "token_type": "bearer"})
-    response.set_cookie(key="access_token", value=f"Bearer {access_token}", httponly=True)
-    return response
-
-@app.get("/logout")
-async def logout(response: Response):
-    response.delete_cookie("access_token")
-    return {"message": "Logged out"}
 
 @app.post("/analyze")
 @limiter.limit("10/minute")
-async def analyze_video(request: Request, body: AnalyzeRequest, current_user: dict = Depends(get_current_user)):
+async def analyze_video(request: Request, body: AnalyzeRequest):
     """
     1. Validates URL (Anti-SSRF).
     2. Uses yt-dlp to extract metadata.
     3. Returns available formats.
     """
-    logger.info(f"Analyzing URL: {body.url} | User: {current_user['username']}")
+    logger.info(f"Analyzing URL: {body.url}")
     
     # 1. Security Check
     try:
@@ -250,6 +185,8 @@ async def analyze_video(request: Request, body: AnalyzeRequest, current_user: di
 
 # --- BACKGROUND PROCESSING TASK ---
 
+# --- BACKGROUND PROCESSING TASK ---
+
 def run_download_task(job_id: str, url: str, format_id: str, is_audio: bool):
     try:
         processing_jobs[job_id]["status"] = "processing"
@@ -316,7 +253,7 @@ def run_download_task(job_id: str, url: str, format_id: str, is_audio: bool):
 
 @app.post("/download")
 @limiter.limit("2/minute")
-async def start_download(request: Request, body: DownloadRequest, background_tasks: BackgroundTasks, current_user: dict = Depends(get_current_user)):
+async def start_download(request: Request, body: DownloadRequest, background_tasks: BackgroundTasks):
     """
     1. Validates URL.
     2. Creates a Background Task for downloading/converting.
@@ -343,7 +280,6 @@ async def start_download(request: Request, body: DownloadRequest, background_tas
     processing_jobs[job_id] = {
         "status": "queued",
         "title": "Processing...",
-        "owner": current_user["username"] # Binding job to user
     }
     
     background_tasks.add_task(run_download_task, job_id, safe_url, body.format_id, body.is_audio)
@@ -351,15 +287,10 @@ async def start_download(request: Request, body: DownloadRequest, background_tas
     return {"job_id": job_id, "status": "queued"}
 
 @app.get("/job/{job_id}")
-async def get_job_status(job_id: str, current_user: dict = Depends(get_current_user)):
+async def get_job_status(job_id: str):
     job = processing_jobs.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    
-    # IDOR Check
-    if job.get("owner") != current_user["username"]:
-        logger.warning(f"IDOR Attempt: User {current_user['username']} tried to access job {job_id} owned by {job.get('owner')}")
-        raise HTTPException(status_code=403, detail="Access Forbidden")
     
     # If completed, returning the download link
     result = {
@@ -375,15 +306,11 @@ async def get_job_status(job_id: str, current_user: dict = Depends(get_current_u
     return result
 
 @app.get("/files/{job_id}")
-async def download_file(job_id: str, background_tasks: BackgroundTasks, current_user: dict = Depends(get_current_user)):
+async def download_file(job_id: str, background_tasks: BackgroundTasks):
     job = processing_jobs.get(job_id)
     if not job:
          raise HTTPException(status_code=404, detail="File not found")
          
-    # IDOR Check
-    if job.get("owner") != current_user["username"]:
-        raise HTTPException(status_code=403, detail="Access Forbidden")
-
     if job["status"] != "completed":
         raise HTTPException(status_code=404, detail="File not ready or expired")
         
