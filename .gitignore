@@ -1,6 +1,58 @@
-.venv/
-.env
+# Python
 __pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+pythonv/
+
+# Environment Variables
+.env
+.env.*
+
+# Logs
 *.log
+
+# Application Specific
 temp_downloads/
 ffmpeg.exe
+video_downloader/ffmpeg.exe
+video_downloader/temp_downloads/
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS Generated
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
