@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+yt-dlp
+requests
+ffmpeg-python
+python-multipart
+jinja2
+dnspython

@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Downloader</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Aboreto&display=swap"
+        rel="stylesheet">
+</head>
+
+<body>
+    <canvas id="bgCanvas"></canvas>
+    <div style="position: absolute; top: 20px; right: 20px; z-index: 100;">
+        {% if user %}
+        <span style="color: #888; font-size: 0.9rem; margin-right: 10px;">{{ user }}</span>
+        <button onclick="logout()"
+            style="background: transparent; border: 1px solid #333; color: #00ff9d; padding: 5px 10px; cursor: pointer; font-size: 0.8rem;">Logout</button>
+        {% endif %}
+    </div>
+    <div class="container">
+        <h1>Video Downloader</h1>
+        <div class="input-group">
+            <input type="text" id="urlInput" placeholder="Paste YouTube or Instagram Link">
+            <button id="downloadBtn" onclick="downloadVideo()">Download</button>
+        </div>
+
+        <div id="loading" class="hidden">
+            <div class="spinner"></div>
+            <p>Processing...</p>
+        </div>
+
+        <div id="result" class="hidden">
+            <h3 id="videoTitle"></h3>
+            <div class="actions">
+                <a id="downloadLink" href="#" target="_blank" class="btn-download">Click to Save</a>
+                <a href="/" target="_blank" class="btn-secondary">Download Another</a>
+            </div>
+            <video id="videoPreview" controls class="hidden"></video>
+        </div>
+
+        <div id="error" class="hidden">
+            <p id="errorMessage"></p>
+        </div>
+    </div>
+
+    <script>
+        async function downloadVideo() {
+            const url = document.getElementById('urlInput').value;
+            const loading = document.getElementById('loading');
+            const result = document.getElementById('result');
+            const error = document.getElementById('error');
+            const btn = document.getElementById('downloadBtn');
+
+            if (!url) {
+                showError("Please enter a URL");
+                return;
+            }
+
+            loading.classList.remove('hidden');
+            result.classList.add('hidden');
+            error.classList.add('hidden');
+            btn.disabled = true;
+
+            try {
+                const response = await fetch('/download', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ url: url }),
+                });
+
+                const data = await response.json();
+
+                if (response.status === 401) {
+                    window.location.href = '/login';
+                    return;
+                }
+
+                if (response.ok) {
+                    document.getElementById('videoTitle').innerText = data.title || "Video Ready";
+
+                    const formats = data.formats || [];
+                    const actionsDiv = document.querySelector('.actions');
+
+                    // Remove existing download buttons (keep the reset button)
+                    const existingBtns = actionsDiv.querySelectorAll('.btn-download');
+                    existingBtns.forEach(btn => btn.remove());
+
+                    // Get the reset button to insert before it
+                    const resetBtn = actionsDiv.querySelector('.btn-secondary');
+
+                    // Create a button for each format
+                    formats.forEach(fmt => {
+                        const a = document.createElement('a');
+                        a.className = 'btn-download';
+
+                        // Check for High Quality (1080p, 4K, 2K, etc.)
+                        // We check if height >= 1080
+                        let isHighQuality = false;
+                        if (fmt.height && fmt.height >= 1080) {
+                            isHighQuality = true;
+                        }
+
+                        // Label Logic
+                        let label = `Download ${fmt.quality}`;
+                        if (fmt.type === 'audio') {
+                            label = `Download Audio Only`;
+                        } else if (fmt.type === 'process' && isHighQuality) {
+                            // Only add text if it is actually high quality
+                            // But user said "DONT LABEL HIGH QUALITY TO EVERY BUTTONS"
+                            // Actually user said: "ONLY 1080 P AND 4K HAVE THE GREEN COLOUR ... AND DONT LABEL HIGH QUALITY TO EVERY BUTTONS ON GRREN HAVE"
+                            // This is slightly ambiguous. "DONT LABEL HIGH QUALITY TO EVERY BUTTONS ON GRREN HAVE" -> "Don't label 'High Quality' to every button *that* the green ones have"?
+                            // Or "Don't label 'High Quality' to every button; [only] the green ones have it"?
+                            // Given the previous state had it on all process buttons, and the user wants to restrict green to 1080p/4K, 
+                            // I will assume they want the label matches the green buttons.
+                            label = `Download ${fmt.quality} (High Quality)`;
+                        }
+
+                        if (fmt.type === 'process') {
+                            a.href = "#";
+                            a.innerText = label;
+
+                            // Style Logic: Only Green if verifyably High Quality (>= 1080p)
+                            if (isHighQuality) {
+                                a.style.background = "linear-gradient(45deg, #00ff9d, #00cc7a)";
+                                a.style.color = "black";
+                                a.style.fontWeight = "600";
+                                a.style.border = "none";
+                            } else {
+                                // Default white/gray style for lower quality processed videos (if any)
+                                a.style.background = "white";
+                                a.style.color = "black";
+                                a.style.fontWeight = "600";
+                                a.style.border = "1px solid #ccc";
+                            }
+
+                            a.onclick = async (e) => {
+                                e.preventDefault();
+                                await processAndDownload(fmt.url, a, fmt.height);
+                            };
+                        } else {
+                            const proxyUrl = `/stream_video?url=${encodeURIComponent(fmt.url)}&title=${encodeURIComponent(data.title || 'video')}`;
+                            a.href = proxyUrl;
+                            a.innerText = label;
+                            a.target = '_blank';
+
+                            // Ensure standard buttons are white
+                            a.style.background = "white";
+                            a.style.color = "black";
+                        }
+
+                        actionsDiv.insertBefore(a, resetBtn);
+                    });
+
+                    // Set preview to the highest quality PLAYABLE format (video type or process type with stream_url)
+                    if (formats.length > 0) {
+                        const videoPreview = document.getElementById('videoPreview');
+
+                        // Filter playable formats:
+                        // 1. type === 'video' (progressive)
+                        // 2. type === 'process' AND has stream_url (video-only high quality)
+                        const playable = formats
+                            .filter(f => f.type === 'video' || (f.type === 'process' && f.stream_url))
+                            .sort((a, b) => (b.height || 0) - (a.height || 0));
+
+                        let previewFmt = null;
+
+                        if (playable.length > 0) {
+                            // Pick the highest resolution (1080p > 720p > ...)
+                            previewFmt = playable[0];
+                        } else {
+                            // Fallback to anything non-audio (might be a process type without stream_url?)
+                            previewFmt = formats.find(f => f.type !== 'audio' && f.type !== 'process');
+                        }
+
+                        if (previewFmt) {
+                            // Use stream_url if available, else url
+                            const urlToStream = previewFmt.stream_url || previewFmt.url;
+                            if (urlToStream) {
+                                // Use the proxy to ensure playback
+                                videoPreview.src = `/stream_video?url=${encodeURIComponent(urlToStream)}&title=${encodeURIComponent(data.title || 'video')}`;
+                                videoPreview.classList.remove('hidden');
+
+                                // Warning if video-only high quality (process type)
+                                if (previewFmt.type === 'process') {
+                                    // Optional: Add a note or handle audio separately?
+                                    // For now, let it play (silent high quality)
+                                    videoPreview.muted = true; // Sometimes helps autoplay
+                                    // Maybe show a toast "Preview is video-only for High Quality"?
+                                }
+                            }
+                        }
+                    }
+
+                    result.classList.remove('hidden');
+                    btn.classList.add('hidden'); // Hide the download button upon success
+                } else {
+                    showError(data.detail || "Failed to process video");
+                }
+            } catch (err) {
+                showError("Network error or server unreachable");
+                console.error(err);
+            } finally {
+                loading.classList.add('hidden');
+                btn.disabled = false;
+            }
+        }
+
+        async function processAndDownload(url, btn, quality) {
+            const originalText = btn.innerText;
+            btn.innerText = "Starting...";
+            btn.style.opacity = "0.7";
+            btn.style.pointerEvents = "none";
+
+            try {
+                // 1. Start the job
+                const res = await fetch('/process_video', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: url, quality: quality })
+                });
+                const d = await res.json();
+
+                if (res.status === 401) {
+                    window.location.href = '/login';
+                    return;
+                }
+
+                if (!res.ok) {
+                    throw new Error(d.detail || "Failed to start processing");
+                }
+
+                const jobId = d.job_id;
+
+                // 2. Poll for status
+                const pollInterval = setInterval(async () => {
+                    try {
+                        const statusRes = await fetch(`/process_status/${jobId}`);
+                        if (!statusRes.ok) return; // Skip this poll if error
+
+                        const statusData = await statusRes.json();
+
+                        if (statusData.status === 'processing') {
+                            const p = Math.round(statusData.progress || 0);
+                            btn.innerText = `Processing: ${p}%`;
+                        } else if (statusData.status === 'completed') {
+                            clearInterval(pollInterval);
+
+                            btn.innerText = "Download Ready - Click to Save";
+                            btn.href = statusData.download_url;
+                            btn.onclick = null; // Remove handler
+                            btn.style.pointerEvents = "auto";
+                            btn.style.opacity = "1";
+                            btn.style.background = "#fff";
+                            btn.style.color = "#000";
+
+                            // Auto trigger
+                            window.open(statusData.download_url, '_blank');
+                        } else if (statusData.status === 'failed') {
+                            clearInterval(pollInterval);
+                            throw new Error(statusData.error || "Processing failed");
+                        }
+                    } catch (e) {
+                        // Polling error (network, etc)
+                        console.error("Polling error:", e);
+                    }
+                }, 1000);
+
+            } catch (e) {
+                console.error(e);
+                alert("Error: " + (e.message || "Server error"));
+                btn.innerText = "Failed";
+                btn.style.pointerEvents = "auto";
+                btn.style.opacity = "1";
+            }
+        }
+
+        function showError(msg) {
+            const errorDiv = document.getElementById('error');
+            document.getElementById('errorMessage').innerText = msg;
+            errorDiv.classList.remove('hidden');
+        }
+
+        function reset() {
+            document.getElementById('urlInput').value = '';
+            document.getElementById('result').classList.add('hidden');
+            document.getElementById('error').classList.add('hidden');
+            document.getElementById('videoPreview').src = '';
+            document.getElementById('downloadBtn').classList.remove('hidden'); // Ensure button is visible on reset
+        }
+
+        // Add listener to show button again if user types/pastes a new URL
+        document.getElementById('urlInput').addEventListener('input', () => {
+            const btn = document.getElementById('downloadBtn');
+            const result = document.getElementById('result');
+            if (result.classList.contains('hidden') === false) {
+                // If resulting video is shown, maybe hide it on input change? 
+                // Or just show button? Let's just show button.
+            }
+            btn.classList.remove('hidden');
+        });
+
+        async function logout() {
+            await fetch('/logout');
+            window.location.href = '/login';
+        }
+    </script>
+    <script src="/static/background.js"></script>
+</body>
+
+</html>

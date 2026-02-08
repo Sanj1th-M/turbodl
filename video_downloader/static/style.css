@@ -1,0 +1,211 @@
+:root {
+    --bg-color: #000000;
+    /* Pure Black */
+    --text-color: #fafafa;
+    /* zinc-50 */
+    --accent-color: #00ff9d;
+    /* Neon Green */
+    --accent-hover: #00cc7d;
+    --error-color: #ff4d4d;
+    --input-bg: #000000;
+    /* Black for input background */
+}
+
+body {
+    background-color: var(--bg-color);
+    /* We keep the gradient as a base, but make sure it doesn't hide the canvas if we want it on top? 
+       Actually, the canvas should be ON TOP of the background color/gradient but BEHIND the content.
+       The React component had `style={{ background: '#000000' }}` for digital.
+       Let's keep the body gradient as the base "atmosphere" and overlay the canvas.
+    */
+    background-image:
+        radial-gradient(circle at 20% 50%, rgba(120, 120, 128, 0.05) 0%, transparent 50%),
+        radial-gradient(circle at 80% 80%, rgba(120, 120, 128, 0.05) 0%, transparent 50%);
+    background-attachment: fixed;
+    color: var(--text-color);
+    font-family: 'Inter', sans-serif;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    position: relative;
+    /* Needed for absolute positioning of children */
+    overflow-x: hidden;
+}
+
+#bgCanvas {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: -1;
+    /* Behind everything */
+    pointer-events: none;
+    /* Let clicks pass through */
+}
+
+.container {
+    text-align: center;
+    width: 90%;
+    max-width: 600px;
+}
+
+h1 {
+    font-family: "Aboreto", system-ui;
+    font-weight: 400;
+    font-style: normal;
+    text-transform: uppercase;
+    font-size: 2.5rem;
+    margin-bottom: 2rem;
+    letter-spacing: -1px;
+    background: linear-gradient(to right, #fff, #888);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+p {
+    font-family: "Aboreto", system-ui;
+    font-weight: 400;
+    font-style: normal;
+}
+
+.input-group {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+input[type="text"] {
+    flex-grow: 1;
+    padding: 15px;
+    border-radius: 8px;
+    border: 1px solid #333;
+    background-color: var(--input-bg);
+    color: white;
+    font-size: 1rem;
+    outline: none;
+    transition: border-color 0.3s;
+}
+
+input[type="text"]:focus {
+    border-color: var(--accent-color);
+    box-shadow: 0 0 10px rgba(0, 255, 157, 0.2);
+}
+
+button {
+    padding: 15px 30px;
+    border-radius: 8px;
+    border: none;
+    background-color: var(--accent-color);
+    color: black;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 1rem;
+    transition: all 0.3s ease;
+    box-shadow: 0 0 15px rgba(0, 255, 157, 0.4);
+}
+
+button:hover {
+    background-color: var(--accent-hover);
+    transform: translateY(-2px);
+    box-shadow: 0 0 25px rgba(0, 255, 157, 0.6);
+}
+
+button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.hidden {
+    display: none !important;
+}
+
+#loading {
+    margin-top: 20px;
+}
+
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    border-top-color: var(--accent-color);
+    animation: spin 1s ease-in-out infinite;
+    margin: 0 auto 10px;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+#result {
+    margin-top: 30px;
+    padding: 20px;
+    background: #000000;
+    border-radius: 12px;
+    border: 1px solid #222;
+}
+
+video {
+    width: 100%;
+    border-radius: 8px;
+    margin-top: 15px;
+    max-height: 400px;
+}
+
+.actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: center;
+    margin-bottom: 20px;
+}
+
+.btn-download,
+.btn-secondary {
+    padding: 12px 20px;
+    border-radius: 6px;
+    font-weight: 600;
+    text-decoration: none;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.3s ease;
+    border: 1px solid transparent;
+}
+
+.btn-download {
+    background: white;
+    color: black;
+}
+
+.btn-download:hover {
+    background: #e0e0e0;
+    transform: translateY(-2px);
+}
+
+.btn-secondary {
+    background: transparent;
+    border-color: #444;
+    color: #888;
+}
+
+.btn-secondary:hover {
+    border-color: #fff;
+    color: #fff;
+    background: transparent;
+}
+
+#error {
+    margin-top: 20px;
+    color: var(--error-color);
+    padding: 10px;
+    background: rgba(255, 77, 77, 0.1);
+    border-radius: 6px;
+}
