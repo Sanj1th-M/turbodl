@@ -6,15 +6,16 @@ import uuid
 import asyncio
 import json
 import shutil
+import subprocess
 from typing import Optional, List, Dict
+from urllib.parse import unquote
 
-from fastapi import FastAPI, Form, Request, HTTPException, BackgroundTasks, Depends, Response, status
-from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, RedirectResponse
+from fastapi import FastAPI, Request, HTTPException, BackgroundTasks, Query
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel
 import yt_dlp
 
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -22,7 +23,6 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 # Import Security Layer
-
 from security import validate_url, sanitize_filename, safe_subprocess_run, logger as sec_logger
 
 # Configure logging
@@ -30,6 +30,19 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("TurboDL")
 
 app = FastAPI(title="TurboDL Downloader")
+
+# Constants
+TEMP_DIR = "temp_downloads"
+
+# Detect FFMPEG
+local_ffmpeg = os.path.join(os.getcwd(), "ffmpeg.exe")
+if os.path.exists(local_ffmpeg):
+    FFMPEG_PATH = local_ffmpeg
+else:
+    FFMPEG_PATH = "ffmpeg"  # Expecting in PATH
+
+# Ensure temp dir exists
+os.makedirs(TEMP_DIR, exist_ok=True)
 
 @app.on_event("startup")
 async def startup_event():
@@ -50,22 +63,10 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # Templates
 templates = Jinja2Templates(directory="templates")
 
+# Jobs storage (In-memory for simplicity)
+processing_jobs: Dict[str, Dict] = {}
 
-
-# Constants
-TEMP_DIR = "temp_downloads"
-
-# Detect FFMPEG
-local_ffmpeg = os.path.join(os.getcwd(), "ffmpeg.exe")
-if os.path.exists(local_ffmpeg):
-    FFMPEG_PATH = local_ffmpeg
-else:
-    FFMPEG_PATH = "ffmpeg" # Expecting in PATH
-
-# Ensure temp dir exists
-os.makedirs(TEMP_DIR, exist_ok=True)
-
-# Helper to clean up old files (simple version)
+# Helper to clean up old files
 def cleanup_file(path: str):
     try:
         if os.path.exists(path):
@@ -78,21 +79,12 @@ def cleanup_file(path: str):
         logger.error(f"Cleanup error for {path}: {e}")
 
 # Data Models
-class AnalyzeRequest(BaseModel):
-    url: str
-
 class DownloadRequest(BaseModel):
     url: str
-    format_id: str
-    is_audio: bool = False
 
-# Jobs storage (In-memory for simplicity)
-# Jobs storage (In-memory for simplicity)
-processing_jobs: Dict[str, Dict] = {}
-
-# --- DEPENDENCIES ---
-
-
+class ProcessRequest(BaseModel):
+    url: str
+    quality: int  # Height in pixels, e.g., 1080, 720
 
 # --- ROUTES ---
 
@@ -101,229 +93,225 @@ async def read_root(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
 
-
-@app.post("/analyze")
+@app.post("/download")
 @limiter.limit("10/minute")
-async def analyze_video(request: Request, body: AnalyzeRequest):
+async def download_video(request: Request, body: DownloadRequest):
     """
-    1. Validates URL (Anti-SSRF).
-    2. Uses yt-dlp to extract metadata.
-    3. Returns available formats.
+    Analyzes video URL and returns available formats
+    Frontend expects: { title, formats[] }
     """
     logger.info(f"Analyzing URL: {body.url}")
     
-    # 1. Security Check
+    # Security Check
     try:
         safe_url = validate_url(body.url)
     except ValueError as e:
         logger.warning(f"Security Alert: {e}")
-        raise HTTPException(status_code=403, detail="Access denied: Invalid URL")
-        
-    # 2. Extract Info using yt-dlp (Dump JSON)
-    # We use subprocess securely to isolate execution
-    cmd = [
-        "yt-dlp", 
-        "--dump-json", 
-        "--no-playlist", 
-        "--no-warnings", 
-        "--quiet", 
-        safe_url
-    ]
+        raise HTTPException(status_code=403, detail=str(e))
     
     try:
-        # Run securely
-        result = safe_subprocess_run(cmd, timeout=30)
-        info = json.loads(result.stdout)
+        # Use yt-dlp to get video info
+        ydl_opts = {
+            'quiet': True,
+            'no_warnings': True,
+            'no_playlist': True,
+        }
         
-        # Parse formats
-        formats_list = []
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(safe_url, download=False)
         
-        # Title sanitization for display
         title = info.get('title', 'Unknown Video')
+        formats_raw = info.get('formats', [])
         
-        # Video Formats
-        if 'formats' in info:
-            # Filter and sort
-            valid_formats = [
-                f for f in info['formats'] 
-                if f.get('vcodec') != 'none' and f.get('height')
-            ]
-            valid_formats.sort(key=lambda x: x.get('height', 0) or 0, reverse=True)
-            
-            seen_heights = set()
-            for f in valid_formats:
-                h = f.get('height')
-                if h and h not in seen_heights:
-                    formats_list.append({
-                        "id": f['format_id'],
-                        "quality": f"{h}p",
-                        "type": "video",
-                        "height": h,
-                        "ext": f.get('ext', 'mp4')
-                    })
-                    seen_heights.add(h)
-                    
-        # Audio Only (Best)
-        formats_list.append({
-            "id": "bestaudio/best",
-            "quality": "Audio Only (MP3/M4A)",
-            "type": "audio",
-            "height": 0,
-            "ext": "mp3"
-        })
+        # Build format list for frontend
+        formats_list = []
+        seen_heights = set()
+        
+        # Video formats (progressive - direct download)
+        progressive = [f for f in formats_raw 
+                      if f.get('vcodec') != 'none' 
+                      and f.get('acodec') != 'none'
+                      and f.get('height')]
+        progressive.sort(key=lambda x: x.get('height', 0), reverse=True)
+        
+        for f in progressive:
+            h = f.get('height')
+            if h and h not in seen_heights and h <= 720:  # Progressive typically only 720p and below
+                formats_list.append({
+                    'url': f['url'],
+                    'quality': f'{h}p',
+                    'type': 'video',  # Direct download
+                    'height': h
+                })
+                seen_heights.add(h)
+        
+        # High quality formats (video-only, need processing)
+        video_only = [f for f in formats_raw
+                     if f.get('vcodec') != 'none'
+                     and f.get('acodec') == 'none'
+                     and f.get('height')]
+        video_only.sort(key=lambda x: x.get('height', 0), reverse=True)
+        
+        for f in video_only:
+            h = f.get('height')
+            if h and h not in seen_heights and h >= 1080:  # High quality only
+                formats_list.append({
+                    'url': f['url'],
+                    'stream_url': f['url'],  # For preview
+                    'quality': f'{h}p',
+                    'type': 'process',  # Needs server processing
+                    'height': h
+                })
+                seen_heights.add(h)
+        
+        # Audio only
+        audio_formats = [f for f in formats_raw if f.get('acodec') != 'none' and f.get('vcodec') == 'none']
+        if audio_formats:
+            best_audio = max(audio_formats, key=lambda x: x.get('abr', 0) or 0)
+            formats_list.append({
+                'url': best_audio['url'],
+                'quality': 'Audio',
+                'type': 'audio',
+                'height': 0
+            })
         
         return {
-            "status": "success",
             "title": title,
-            "thumbnail": info.get('thumbnail'),
             "formats": formats_list
         }
-
+        
     except Exception as e:
-        logger.error(f"Analysis failed: {e}")
-        raise HTTPException(status_code=400, detail="Failed to analyze video. URL might be invalid or unsupported.")
+        logger.error(f"Download failed: {e}")
+        raise HTTPException(status_code=400, detail=f"Failed to process video: {str(e)}")
 
-# --- BACKGROUND PROCESSING TASK ---
 
-# --- BACKGROUND PROCESSING TASK ---
-
-def run_download_task(job_id: str, url: str, format_id: str, is_audio: bool):
-    try:
-        processing_jobs[job_id]["status"] = "processing"
-        
-        # Create a unique directory for this job to avoid collisions
-        job_dir = os.path.join(TEMP_DIR, job_id)
-        os.makedirs(job_dir, exist_ok=True)
-        
-        # Internal filename (UUID based)
-        # yt-dlp will append extension
-        output_template = os.path.join(job_dir, "video.%(ext)s")
-        
-        # Construct yt-dlp command
-        # Anti-RCE: We use list format, no shell=True
-        cmd = ["yt-dlp", "--no-playlist", "--no-warnings", "--quiet", "--output", output_template]
-        
-        # Explicitly set ffmpeg location if we found it locally
-        if FFMPEG_PATH != "ffmpeg":
-             cmd.extend(["--ffmpeg-location", FFMPEG_PATH])
-        
-        if is_audio:
-            cmd.extend(["-x", "--audio-format", "mp3", "--audio-quality", "0"])
-            target_ext = "mp3"
-        else:
-            # If format is specific video, we try to merge best audio
-            # If standard format_id passed
-            if format_id == "best":
-                cmd.extend(["-f", "bestvideo+bestaudio/best", "--merge-output-format", "mp4"])
-            else:
-                 cmd.extend(["-f", f"{format_id}+bestaudio/best", "--merge-output-format", "mp4"])
-            target_ext = "mp4"
-            
-        # Add URL at the end
-        cmd.append(url)
-        
-        # Execute download securely
-        safe_subprocess_run(cmd, timeout=300) # 5 min timeout
-        
-        # Find the resulting file
-        # Since we don't know exact extension if merge failed or differ, we look in the folder
-        files = os.listdir(job_dir)
-        if not files:
-            raise Exception("No file downloaded")
-            
-        downloaded_file = files[0]
-        full_path = os.path.join(job_dir, downloaded_file)
-        
-        # Verify it exists
-        if os.path.exists(full_path):
-             processing_jobs[job_id].update({
-                "status": "completed",
-                "file_path": full_path,
-                "filename": downloaded_file 
-            })
-        else:
-             raise Exception("Downloaded file missing")
-
-    except Exception as e:
-        logger.error(f"Job {job_id} failed: {e}")
-        processing_jobs[job_id].update({
-            "status": "failed",
-            "error": str(e)
-        })
-
-@app.post("/download")
-@limiter.limit("2/minute")
-async def start_download(request: Request, body: DownloadRequest, background_tasks: BackgroundTasks):
+@app.post("/process_video")
+@limiter.limit("5/minute")
+async def process_video(request: Request, body: ProcessRequest, background_tasks: BackgroundTasks):
     """
-    1. Validates URL.
-    2. Creates a Background Task for downloading/converting.
-    3. Returns a Job ID to poll.
+    Process high-quality video (merge video + audio)
+    Returns job_id for polling
     """
-    # 1. Security Check
+    logger.info(f"Processing video: {body.url} at {body.quality}p")
+    
+    # Security Check
     try:
         safe_url = validate_url(body.url)
     except ValueError as e:
-        logger.warning(f"Download blocked: {e}")
-        raise HTTPException(status_code=403, detail="Access denied: Invalid URL")
-        
-    # Prevent memory leak: limit stored jobs
-    if len(processing_jobs) >= 50:
-        # Remove oldest job
-        oldest_job_id = next(iter(processing_jobs))
-        processing_jobs.pop(oldest_job_id)
-        # Ideally clean up the file too
-        old_job_dir = os.path.join(TEMP_DIR, oldest_job_id)
-        cleanup_file(old_job_dir)
-        
-    job_id = str(uuid.uuid4())
+        logger.warning(f"Security Alert: {e}")
+        raise HTTPException(status_code=403, detail=str(e))
     
+    # Create job
+    job_id = str(uuid.uuid4())
     processing_jobs[job_id] = {
         "status": "queued",
-        "title": "Processing...",
+        "progress": 0,
     }
     
-    background_tasks.add_task(run_download_task, job_id, safe_url, body.format_id, body.is_audio)
+    # Start background task
+    background_tasks.add_task(run_merge_task, job_id, safe_url, body.quality)
     
-    return {"job_id": job_id, "status": "queued"}
+    return {"job_id": job_id}
 
-@app.get("/job/{job_id}")
-async def get_job_status(job_id: str):
+
+def run_merge_task(job_id: str, url: str, quality: int):
+    """Background task to download and merge video+audio"""
+    try:
+        processing_jobs[job_id]["status"] = "processing"
+        processing_jobs[job_id]["progress"] = 10
+        
+        # Create job directory
+        job_dir = os.path.join(TEMP_DIR, job_id)
+        os.makedirs(job_dir, exist_ok=True)
+        
+        output_file = os.path.join(job_dir, "output.mp4")
+        
+        # Use yt-dlp to download and merge
+        ydl_opts = {
+            'format': f'bestvideo[height<={quality}]+bestaudio/best',
+            'outtmpl': output_file,
+            'merge_output_format': 'mp4',
+            'quiet': True,
+            'no_warnings': True,
+            'no_playlist': True,
+        }
+        
+        if FFMPEG_PATH != "ffmpeg":
+            ydl_opts['ffmpeg_location'] = FFMPEG_PATH
+        
+        # Progress hook
+        def progress_hook(d):
+            if d['status'] == 'downloading':
+                try:
+                    percent = d.get('downloaded_bytes', 0) / d.get('total_bytes', 1) * 100
+                    processing_jobs[job_id]["progress"] = min(int(percent * 0.8), 80)  # 0-80%
+                except:
+                    pass
+            elif d['status'] == 'finished':
+                processing_jobs[job_id]["progress"] = 90
+        
+        ydl_opts['progress_hooks'] = [progress_hook]
+        
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+        
+        processing_jobs[job_id]["progress"] = 100
+        processing_jobs[job_id]["status"] = "completed"
+        processing_jobs[job_id]["download_url"] = f"/download_file/{job_id}"
+        processing_jobs[job_id]["file_path"] = output_file
+        
+        logger.info(f"Job {job_id} completed successfully")
+        
+    except Exception as e:
+        logger.error(f"Job {job_id} failed: {e}")
+        processing_jobs[job_id]["status"] = "failed"
+        processing_jobs[job_id]["error"] = str(e)
+
+
+@app.get("/process_status/{job_id}")
+async def get_process_status(job_id: str):
+    """Get status of processing job"""
     job = processing_jobs.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     
-    # If completed, returning the download link
-    result = {
+    return {
         "status": job["status"],
+        "progress": job.get("progress", 0),
+        "download_url": job.get("download_url"),
         "error": job.get("error")
     }
-    
-    if job["status"] == "completed":
-        # Create a signed-like temp link logic or just direct path access
-        # For this task, we return a direct download endpoint
-        result["download_url"] = f"/files/{job_id}"
-        
-    return result
 
-@app.get("/files/{job_id}")
-async def download_file(job_id: str, background_tasks: BackgroundTasks):
+
+@app.get("/download_file/{job_id}")
+async def download_processed_file(job_id: str):
+    """Download completed processed file"""
     job = processing_jobs.get(job_id)
-    if not job:
-         raise HTTPException(status_code=404, detail="File not found")
-         
-    if job["status"] != "completed":
-        raise HTTPException(status_code=404, detail="File not ready or expired")
-        
-    file_path = job["file_path"]
-    filename = job["filename"]
+    if not job or job["status"] != "completed":
+        raise HTTPException(status_code=404, detail="File not ready")
     
-    # Check existence
-    if not os.path.exists(file_path):
-         raise HTTPException(status_code=404, detail="File purged")
-         
-    # Return file with correct content disposition
+    file_path = job.get("file_path")
+    if not file_path or not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File not found")
+    
     return FileResponse(
-        path=file_path, 
-        filename=filename,
-        media_type="application/octet-stream"
+        path=file_path,
+        filename="video.mp4",
+        media_type="video/mp4"
     )
+
+
+@app.get("/stream_video")
+async def stream_video(url: str = Query(...), title: str = Query("video")):
+    """Proxy video stream for preview/download"""
+    try:
+        # Decode URL
+        video_url = unquote(url)
+        
+        # For direct downloads, redirect to the source
+        # This works for most video platforms
+        return RedirectResponse(url=video_url)
+        
+    except Exception as e:
+        logger.error(f"Stream error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
