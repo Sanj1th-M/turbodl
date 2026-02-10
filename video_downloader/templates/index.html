@@ -141,6 +141,32 @@
                                 // Pass original URL, not stream URL, so yt-dlp can find audio
                                 await processAndDownload(originalUrl, a, fmt.height);
                             };
+
+                            // Add "Play HQ" button for high quality video formats
+                            if (isHighQuality) {
+                                const playBtn = document.createElement('a');
+                                playBtn.href = "#";
+                                playBtn.innerHTML = "▶ HQ";
+                                playBtn.title = "Process and Play in High Quality";
+                                playBtn.className = 'btn-download';
+
+                                // Distinct style for Play button
+                                playBtn.style.background = "linear-gradient(45deg, #FF512F, #DD2476)";
+                                playBtn.style.color = "white";
+                                playBtn.style.fontWeight = "bold";
+                                playBtn.style.marginRight = "10px";
+                                playBtn.style.border = "none";
+                                playBtn.style.minWidth = "60px";
+
+                                playBtn.onclick = async (e) => {
+                                    e.preventDefault();
+                                    // Call processAndDownload with isPlay=true
+                                    await processAndDownload(originalUrl, playBtn, fmt.height, true);
+                                };
+
+                                // Insert Play button before Download button
+                                actionsDiv.insertBefore(playBtn, a);
+                            }
                         } else {
                             // Ensure title is a string for URL encoding
                             const titleStr = String(data.title || 'video');
@@ -215,9 +241,9 @@
             }
         }
 
-        async function processAndDownload(url, btn, quality) {
+        async function processAndDownload(url, btn, quality, isPlay = false) {
             const originalText = btn.innerText;
-            btn.innerText = "Starting...";
+            btn.innerText = isPlay ? "Preparing..." : "Starting...";
             btn.style.opacity = "0.7";
             btn.style.pointerEvents = "none";
 
@@ -251,20 +277,51 @@
 
                         if (statusData.status === 'processing') {
                             const p = Math.round(statusData.progress || 0);
-                            btn.innerText = `Processing: ${p}%`;
+                            btn.innerText = isPlay ? `Loading: ${p}%` : `Processing: ${p}%`;
                         } else if (statusData.status === 'completed') {
                             clearInterval(pollInterval);
 
-                            btn.innerText = "Download Ready - Click to Save";
-                            btn.href = statusData.download_url;
-                            btn.onclick = null; // Remove handler
+                            if (isPlay) {
+                                // Play Logic
+                                btn.innerText = "▶ Play Again";
+                                btn.onclick = async (e) => {
+                                    e.preventDefault();
+                                    // Simply replay existing url
+                                    const videoPreview = document.getElementById('videoPreview');
+                                    videoPreview.src = statusData.download_url;
+                                    videoPreview.muted = false;
+                                    try { await videoPreview.play(); } catch (e) { console.log(e); }
+                                };
+
+                                // Update player source and play
+                                const videoPreview = document.getElementById('videoPreview');
+                                videoPreview.src = statusData.download_url;
+                                videoPreview.classList.remove('hidden');
+                                videoPreview.muted = false; // Unmute for HQ playback
+                                videoPreview.scrollIntoView({ behavior: 'smooth' });
+
+                                try {
+                                    await videoPreview.play();
+                                } catch (e) {
+                                    console.log("Auto-play blocked:", e);
+                                }
+                            } else {
+                                // Download Logic
+                                btn.innerText = "Download Ready - Click to Save";
+                                btn.href = statusData.download_url;
+                                btn.onclick = null; // Remove handler
+
+                                // Auto trigger download
+                                window.open(statusData.download_url, '_blank');
+                            }
+
                             btn.style.pointerEvents = "auto";
                             btn.style.opacity = "1";
-                            btn.style.background = "#fff";
-                            btn.style.color = "#000";
 
-                            // Auto trigger
-                            window.open(statusData.download_url, '_blank');
+                            if (!isPlay) {
+                                btn.style.background = "#fff";
+                                btn.style.color = "#000";
+                            }
                         } else if (statusData.status === 'failed') {
                             clearInterval(pollInterval);
                             throw new Error(statusData.error || "Processing failed");
@@ -280,9 +337,9 @@
                 // Ensure error message is converted to string
                 const errorText = e.message || String(e) || "Server error";
                 alert("Error: " + errorText);
-                btn.innerText = "Failed";
-                btn.style.pointerEvents = "auto";
+                btn.innerText = originalText;
                 btn.style.opacity = "1";
+                btn.style.pointerEvents = "auto";
             }
         }
 
