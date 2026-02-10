@@ -38,6 +38,9 @@
         <div id="error" class="hidden">
             <p id="errorMessage"></p>
         </div>
+        <div style="margin-top: 20px; text-align: center; opacity: 0.5; font-size: 12px; color: white;">
+            v1.5 - High Quality Fixes
+        </div>
     </div>
 
     <script>
@@ -92,12 +95,15 @@
                     const resetBtn = actionsDiv.querySelector('.btn-secondary');
 
                     // Create a button for each format
+                    // Create a button for each format
                     formats.forEach(fmt => {
                         const a = document.createElement('a');
                         a.className = 'btn-download';
 
+                        // Insert 'a' immediately
+                        actionsDiv.insertBefore(a, resetBtn);
+
                         // Check for High Quality (1080p, 4K, 2K, etc.)
-                        // We check if height >= 1080
                         let isHighQuality = false;
                         if (fmt.height && fmt.height >= 1080) {
                             isHighQuality = true;
@@ -108,13 +114,6 @@
                         if (fmt.type === 'audio') {
                             label = `Download Audio Only`;
                         } else if (fmt.type === 'process' && isHighQuality) {
-                            // Only add text if it is actually high quality
-                            // But user said "DONT LABEL HIGH QUALITY TO EVERY BUTTONS"
-                            // Actually user said: "ONLY 1080 P AND 4K HAVE THE GREEN COLOUR ... AND DONT LABEL HIGH QUALITY TO EVERY BUTTONS ON GRREN HAVE"
-                            // This is slightly ambiguous. "DONT LABEL HIGH QUALITY TO EVERY BUTTONS ON GRREN HAVE" -> "Don't label 'High Quality' to every button *that* the green ones have"?
-                            // Or "Don't label 'High Quality' to every button; [only] the green ones have it"?
-                            // Given the previous state had it on all process buttons, and the user wants to restrict green to 1080p/4K, 
-                            // I will assume they want the label matches the green buttons.
                             label = `Download ${fmt.quality} (High Quality)`;
                         }
 
@@ -122,14 +121,13 @@
                             a.href = "#";
                             a.innerText = label;
 
-                            // Style Logic: Only Green if verifyably High Quality (>= 1080p)
+                            // Style Logic
                             if (isHighQuality) {
                                 a.style.background = "linear-gradient(45deg, #00ff9d, #00cc7a)";
                                 a.style.color = "black";
                                 a.style.fontWeight = "600";
                                 a.style.border = "none";
                             } else {
-                                // Default white/gray style for lower quality processed videos (if any)
                                 a.style.background = "white";
                                 a.style.color = "black";
                                 a.style.fontWeight = "600";
@@ -138,19 +136,17 @@
 
                             a.onclick = async (e) => {
                                 e.preventDefault();
-                                // Pass original URL, not stream URL, so yt-dlp can find audio
                                 await processAndDownload(originalUrl, a, fmt.height);
                             };
 
-                            // Add "Play HQ" button for high quality video formats
+                            // Add "Play HQ" button logic
                             if (isHighQuality) {
                                 const playBtn = document.createElement('a');
                                 playBtn.href = "#";
                                 playBtn.innerHTML = "▶ HQ";
-                                playBtn.title = "Process and Play in High Quality";
+                                playBtn.title = "Play High Quality";
                                 playBtn.className = 'btn-download';
 
-                                // Distinct style for Play button
                                 playBtn.style.background = "linear-gradient(45deg, #FF512F, #DD2476)";
                                 playBtn.style.color = "white";
                                 playBtn.style.fontWeight = "bold";
@@ -160,27 +156,22 @@
 
                                 playBtn.onclick = async (e) => {
                                     e.preventDefault();
-                                    // Call processAndDownload with isPlay=true
                                     await processAndDownload(originalUrl, playBtn, fmt.height, true);
                                 };
 
                                 // Insert Play button before Download button
+                                // 'a' is already in DOM, so this works
                                 actionsDiv.insertBefore(playBtn, a);
                             }
                         } else {
-                            // Ensure title is a string for URL encoding
                             const titleStr = String(data.title || 'video');
                             const proxyUrl = `/stream_video?url=${encodeURIComponent(fmt.url)}&title=${encodeURIComponent(titleStr)}`;
                             a.href = proxyUrl;
                             a.innerText = label;
                             a.target = '_blank';
-
-                            // Ensure standard buttons are white
                             a.style.background = "white";
                             a.style.color = "black";
                         }
-
-                        actionsDiv.insertBefore(a, resetBtn);
                     });
 
                     // Set preview to the highest quality PLAYABLE format (video type or process type with stream_url)
@@ -233,7 +224,8 @@
                     showError(errorMsg);
                 }
             } catch (err) {
-                showError("Network error or server unreachable");
+                // Show specific JS error so we know what's wrong
+                showError("Frontend Error: " + (err.message || String(err)));
                 console.error(err);
             } finally {
                 loading.classList.add('hidden');
