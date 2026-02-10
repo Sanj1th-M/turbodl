@@ -75,7 +75,9 @@
                 }
 
                 if (response.ok) {
-                    document.getElementById('videoTitle').innerText = data.title || "Video Ready";
+                    // Ensure title is always a string to prevent "[object] [object]" display
+                    const videoTitle = String(data.title || "Video Ready");
+                    document.getElementById('videoTitle').innerText = videoTitle;
 
                     const formats = data.formats || [];
                     const actionsDiv = document.querySelector('.actions');
@@ -137,7 +139,9 @@
                                 await processAndDownload(fmt.url, a, fmt.height);
                             };
                         } else {
-                            const proxyUrl = `/stream_video?url=${encodeURIComponent(fmt.url)}&title=${encodeURIComponent(data.title || 'video')}`;
+                            // Ensure title is a string for URL encoding
+                            const titleStr = String(data.title || 'video');
+                            const proxyUrl = `/stream_video?url=${encodeURIComponent(fmt.url)}&title=${encodeURIComponent(titleStr)}`;
                             a.href = proxyUrl;
                             a.innerText = label;
                             a.target = '_blank';
@@ -176,7 +180,9 @@
                             const urlToStream = previewFmt.stream_url || previewFmt.url;
                             if (urlToStream) {
                                 // Use the proxy to ensure playback
-                                videoPreview.src = `/stream_video?url=${encodeURIComponent(urlToStream)}&title=${encodeURIComponent(data.title || 'video')}`;
+                                // Ensure title is a string for URL encoding
+                                const titleStr = String(data.title || 'video');
+                                videoPreview.src = `/stream_video?url=${encodeURIComponent(urlToStream)}&title=${encodeURIComponent(titleStr)}`;
                                 videoPreview.classList.remove('hidden');
 
                                 // Warning if video-only high quality (process type)
@@ -193,7 +199,9 @@
                     result.classList.remove('hidden');
                     btn.classList.add('hidden'); // Hide the download button upon success
                 } else {
-                    showError(data.detail || "Failed to process video");
+                    // Ensure error detail is converted to string
+                    const errorMsg = String(data.detail || "Failed to process video");
+                    showError(errorMsg);
                 }
             } catch (err) {
                 showError("Network error or server unreachable");
@@ -266,7 +274,9 @@
 
             } catch (e) {
                 console.error(e);
-                alert("Error: " + (e.message || "Server error"));
+                // Ensure error message is converted to string
+                const errorText = e.message || String(e) || "Server error";
+                alert("Error: " + errorText);
                 btn.innerText = "Failed";
                 btn.style.pointerEvents = "auto";
                 btn.style.opacity = "1";
