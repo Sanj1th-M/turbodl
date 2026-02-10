@@ -34,12 +34,16 @@ app = FastAPI(title="TurboDL Downloader")
 # Constants
 TEMP_DIR = "temp_downloads"
 
-# Detect FFMPEG
-local_ffmpeg = os.path.join(os.getcwd(), "ffmpeg.exe")
-if os.path.exists(local_ffmpeg):
-    FFMPEG_PATH = local_ffmpeg
+# Detect FFMPEG (cross-platform: Windows and Linux/Termux)
+local_ffmpeg_win = os.path.join(os.getcwd(), "ffmpeg.exe")  # Windows
+local_ffmpeg_unix = os.path.join(os.getcwd(), "ffmpeg")     # Linux/Termux
+
+if os.path.exists(local_ffmpeg_win):
+    FFMPEG_PATH = local_ffmpeg_win
+elif os.path.exists(local_ffmpeg_unix):
+    FFMPEG_PATH = local_ffmpeg_unix
 else:
-    FFMPEG_PATH = "ffmpeg"  # Expecting in PATH
+    FFMPEG_PATH = "ffmpeg"  # Expect in system PATH
 
 # Ensure temp dir exists
 os.makedirs(TEMP_DIR, exist_ok=True)
