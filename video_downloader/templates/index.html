@@ -80,6 +80,8 @@
                     document.getElementById('videoTitle').innerText = videoTitle;
 
                     const formats = data.formats || [];
+                    // Store original URL for high-quality processing
+                    const originalUrl = url;
                     const actionsDiv = document.querySelector('.actions');
 
                     // Remove existing download buttons (keep the reset button)
@@ -136,7 +138,8 @@
 
                             a.onclick = async (e) => {
                                 e.preventDefault();
-                                await processAndDownload(fmt.url, a, fmt.height);
+                                // Pass original URL, not stream URL, so yt-dlp can find audio
+                                await processAndDownload(originalUrl, a, fmt.height);
                             };
                         } else {
                             // Ensure title is a string for URL encoding
