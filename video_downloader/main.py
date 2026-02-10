@@ -237,9 +237,14 @@ def run_merge_task(job_id: str, url: str, quality: int):
             'format': f'bestvideo[height<={quality}]+bestaudio/best',
             'outtmpl': output_file,
             'merge_output_format': 'mp4',
-            'quiet': True,
-            'no_warnings': True,
+            'postprocessor_args': [
+                '-c:v', 'copy',  # Copy video stream without re-encoding
+                '-c:a', 'aac',   # Encode audio to AAC codec
+            ],
+            'quiet': False,  # Show output for debugging
+            'no_warnings': False,
             'no_playlist': True,
+            'verbose': True,  # Verbose output to see what's happening
         }
         
         if FFMPEG_PATH != "ffmpeg":
@@ -257,6 +262,8 @@ def run_merge_task(job_id: str, url: str, quality: int):
                 processing_jobs[job_id]["progress"] = 90
         
         ydl_opts['progress_hooks'] = [progress_hook]
+        
+        logger.info(f"Starting download+merge for job {job_id}: URL={url}, Quality={quality}p")
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
