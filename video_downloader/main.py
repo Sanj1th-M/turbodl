@@ -127,18 +127,22 @@ async def download_video(request: Request, body: DownloadRequest):
         formats_list = []
         seen_heights = set()
         
-        # Video formats (progressive - direct download)
+        # Video formats (progressive - direct download with audio)
         progressive = [f for f in formats_raw 
                       if f.get('vcodec') != 'none' 
                       and f.get('acodec') != 'none'
                       and f.get('height')]
         progressive.sort(key=lambda x: x.get('height', 0), reverse=True)
         
+        # Store best progressive for preview (has audio)
+        best_progressive = progressive[0] if progressive else None
+        
         for f in progressive:
             h = f.get('height')
-            if h and h not in seen_heights and h <= 720:  # Progressive typically only 720p and below
+            if h and h not in seen_heights:  # Include ALL progressive formats (they have audio)
                 formats_list.append({
                     'url': f['url'],
+                    'stream_url': f['url'],  # Use same URL for preview (has audio)
                     'quality': f'{h}p',
                     'type': 'video',  # Direct download
                     'height': h
@@ -155,9 +159,11 @@ async def download_video(request: Request, body: DownloadRequest):
         for f in video_only:
             h = f.get('height')
             if h and h not in seen_heights and h >= 1080:  # High quality only
+                # For preview, use best progressive format (has audio) instead of video-only
+                preview_url = best_progressive['url'] if best_progressive else f['url']
                 formats_list.append({
                     'url': f['url'],
-                    'stream_url': f['url'],  # For preview
+                    'stream_url': preview_url,  # Preview uses progressive (has audio)
                     'quality': f'{h}p',
                     'type': 'process',  # Needs server processing
                     'height': h
