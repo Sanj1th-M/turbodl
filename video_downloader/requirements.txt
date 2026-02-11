@@ -6,3 +6,6 @@ ffmpeg-python
 jinja2
 dnspython
 python-dotenv
+slowapi
+pydantic
+ffmpeg

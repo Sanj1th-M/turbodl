@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TurboDL Video Downloader</title>
     <link rel="stylesheet" href="/static/style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Aboreto&display=swap"
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Aboreto&family=Plaster&display=swap"
         rel="stylesheet">
 </head>
 
@@ -15,9 +15,9 @@
     <div style="position: absolute; top: 20px; right: 20px; z-index: 100;">
     </div>
     <div class="container">
-        <h1>TurboDL</h1>
+        <h1>turboDL</h1>
         <div class="input-group">
-            <input type="text" id="urlInput" placeholder="Paste YouTube or Instagram Link">
+            <input type="text" id="urlInput" placeholder="Paste YouTube , Instagram or TikTok Video Links">
             <button id="downloadBtn" onclick="downloadVideo()">Download</button>
         </div>
 
@@ -27,23 +27,113 @@
         </div>
 
         <div id="result" class="hidden">
-            <h3 id="videoTitle"></h3>
-            <div class="actions">
-                <a id="downloadLink" href="#" target="_blank" class="btn-download">Click to Save</a>
-                <a href="/" target="_blank" class="btn-secondary">Download Another</a>
+            <!-- Split Card Layout -->
+            <div class="result-split-container">
+                <!-- Left Column: Video Player (Media Stage) -->
+                <div class="result-left-column">
+                    <div class="video-stage">
+                        <video id="videoPreview" controls class="hidden"></video>
+                    </div>
+                </div>
+
+                <!-- Right Column: Controls -->
+                <div class="result-right-column">
+                    <h3 id="videoTitle"></h3>
+
+                    <!-- Download Buttons Container -->
+                    <div class="actions">
+                        <a id="downloadLink" href="#" target="_blank" class="btn-download">Click to Save</a>
+                        <a href="/" target="_blank" class="btn-secondary">Download Another</a>
+                    </div>
+                </div>
             </div>
-            <video id="videoPreview" controls class="hidden"></video>
         </div>
 
         <div id="error" class="hidden">
             <p id="errorMessage"></p>
         </div>
-        <div style="margin-top: 20px; text-align: center; opacity: 0.5; font-size: 12px; color: white;">
-            v1.5 - High Quality Fixes
+        <div style="margin-top: 20px; text-align: center; opacity: 0.5; font-size: 12px; color: rgb(255, 0, 0);">
         </div>
     </div>
 
     <script>
+        /**
+         * Best Quality Selector Function
+         * Analyzes video formats and selects the highest quality playable format
+         * 
+         * Priority:
+         * 1. Formats with both video AND audio (progressive MP4)
+         * 2. Highest resolution (height)
+         * 3. Highest bitrate
+         * 
+         * Filters out:
+         * - Video-only DASH streams without audio
+         * - Audio-only formats
+         * - Non-playable formats
+         */
+        function selectBestQualityFormat(formats) {
+            if (!formats || formats.length === 0) {
+                console.warn('⚠️ No formats available');
+                return null;
+            }
+
+            console.log('📊 All formats received:', formats);
+
+            // Step 1: Filter for PLAYABLE formats with audio
+            // Progressive formats (type === 'video') have both video AND audio
+            // Process types (type === 'process') are video-only, need merging
+            const playableWithAudio = formats.filter(f => {
+                // Include ONLY progressive video formats (have audio built-in)
+                if (f.type === 'video') {
+                    return true;
+                }
+
+                // Exclude audio-only formats
+                if (f.type === 'audio') {
+                    return false;
+                }
+
+                // Exclude 'process' types - they're video-only without audio
+                return false;
+            });
+
+            console.log('🎵 Formats with audio (type=video):', playableWithAudio);
+
+            // Step 2: Use formats with audio, or fallback to all video formats
+            let candidateFormats = playableWithAudio.length > 0
+                ? playableWithAudio
+                : formats.filter(f => f.type !== 'audio');
+
+            console.log('🎯 Candidate formats:', candidateFormats);
+
+            // Step 3: Sort by quality (descending)
+            // Primary: resolution (height)
+            // Secondary: bitrate
+            candidateFormats.sort((a, b) => {
+                // Compare by height first
+                const heightA = a.height || a.resolution || 0;
+                const heightB = b.height || b.resolution || 0;
+
+                if (heightB !== heightA) {
+                    return heightB - heightA; // Higher resolution first
+                }
+
+                // If heights are equal, compare by bitrate
+                const bitrateA = a.bitrate || a.tbr || 0;
+                const bitrateB = b.bitrate || b.tbr || 0;
+
+                return bitrateB - bitrateA; // Higher bitrate first
+            });
+
+            console.log('📈 Sorted candidates:', candidateFormats);
+
+            // Step 4: Return the best format
+            const bestFormat = candidateFormats.length > 0 ? candidateFormats[0] : null;
+            console.log('✅ Selected best format:', bestFormat);
+
+            return bestFormat;
+        }
+
         async function downloadVideo() {
             const url = document.getElementById('urlInput').value;
             const loading = document.getElementById('loading');
@@ -139,30 +229,6 @@
                                 await processAndDownload(originalUrl, a, fmt.height);
                             };
 
-                            // Add "Play HQ" button logic
-                            if (isHighQuality) {
-                                const playBtn = document.createElement('a');
-                                playBtn.href = "#";
-                                playBtn.innerHTML = "▶ HQ";
-                                playBtn.title = "Play High Quality";
-                                playBtn.className = 'btn-download';
-
-                                playBtn.style.background = "linear-gradient(45deg, #FF512F, #DD2476)";
-                                playBtn.style.color = "white";
-                                playBtn.style.fontWeight = "bold";
-                                playBtn.style.marginRight = "10px";
-                                playBtn.style.border = "none";
-                                playBtn.style.minWidth = "60px";
-
-                                playBtn.onclick = async (e) => {
-                                    e.preventDefault();
-                                    await processAndDownload(originalUrl, playBtn, fmt.height, true);
-                                };
-
-                                // Insert Play button before Download button
-                                // 'a' is already in DOM, so this works
-                                actionsDiv.insertBefore(playBtn, a);
-                            }
                         } else {
                             const titleStr = String(data.title || 'video');
                             const proxyUrl = `/stream_video?url=${encodeURIComponent(fmt.url)}&title=${encodeURIComponent(titleStr)}`;
@@ -174,44 +240,30 @@
                         }
                     });
 
-                    // Set preview to the highest quality PLAYABLE format (video type or process type with stream_url)
+                    // Set preview to the highest quality PLAYABLE format with audio
                     if (formats.length > 0) {
                         const videoPreview = document.getElementById('videoPreview');
+                        const bestFormat = selectBestQualityFormat(formats);
 
-                        // Filter playable formats:
-                        // 1. type === 'video' (progressive)
-                        // 2. type === 'process' AND has stream_url (video-only high quality)
-                        const playable = formats
-                            .filter(f => f.type === 'video' || (f.type === 'process' && f.stream_url))
-                            .sort((a, b) => (b.height || 0) - (a.height || 0));
-
-                        let previewFmt = null;
-
-                        if (playable.length > 0) {
-                            // Pick the highest resolution (1080p > 720p > ...)
-                            previewFmt = playable[0];
-                        } else {
-                            // Fallback to anything non-audio (might be a process type without stream_url?)
-                            previewFmt = formats.find(f => f.type !== 'audio' && f.type !== 'process');
-                        }
-
-                        if (previewFmt) {
+                        if (bestFormat) {
                             // Use stream_url if available, else url
-                            const urlToStream = previewFmt.stream_url || previewFmt.url;
+                            const urlToStream = bestFormat.stream_url || bestFormat.url;
                             if (urlToStream) {
                                 // Use the proxy to ensure playback
-                                // Ensure title is a string for URL encoding
                                 const titleStr = String(data.title || 'video');
                                 videoPreview.src = `/stream_video?url=${encodeURIComponent(urlToStream)}&title=${encodeURIComponent(titleStr)}`;
                                 videoPreview.classList.remove('hidden');
 
-                                // Warning if video-only high quality (process type)
-                                if (previewFmt.type === 'process') {
-                                    // Optional: Add a note or handle audio separately?
-                                    // For now, let it play (silent high quality)
-                                    videoPreview.muted = true; // Sometimes helps autoplay
-                                    // Maybe show a toast "Preview is video-only for High Quality"?
+                                // Audio handling: 'video' type has audio, 'process' type doesn't
+                                if (bestFormat.type === 'video') {
+                                    videoPreview.muted = false; // Has audio
+                                    console.log('🔊 Video has audio');
+                                } else {
+                                    videoPreview.muted = true; // Video-only (process type)
+                                    console.log('🔇 Video-only (no audio)');
                                 }
+
+                                console.log('📺 Video player source set to:', bestFormat.quality, 'format');
                             }
                         }
                     }
@@ -233,9 +285,9 @@
             }
         }
 
-        async function processAndDownload(url, btn, quality, isPlay = false) {
+        async function processAndDownload(url, btn, quality) {
             const originalText = btn.innerText;
-            btn.innerText = isPlay ? "Preparing..." : "Starting...";
+            btn.innerText = "Starting...";
             btn.style.opacity = "0.7";
             btn.style.pointerEvents = "none";
 
@@ -269,51 +321,22 @@
 
                         if (statusData.status === 'processing') {
                             const p = Math.round(statusData.progress || 0);
-                            btn.innerText = isPlay ? `Loading: ${p}%` : `Processing: ${p}%`;
+                            btn.innerText = `Processing: ${p}%`;
                         } else if (statusData.status === 'completed') {
                             clearInterval(pollInterval);
 
-                            if (isPlay) {
-                                // Play Logic
-                                btn.innerText = "▶ Play Again";
-                                btn.onclick = async (e) => {
-                                    e.preventDefault();
-                                    // Simply replay existing url
-                                    const videoPreview = document.getElementById('videoPreview');
-                                    videoPreview.src = statusData.download_url;
-                                    videoPreview.muted = false;
-                                    try { await videoPreview.play(); } catch (e) { console.log(e); }
-                                };
+                            // Download Logic
+                            btn.innerText = "Download Ready - Click to Save";
+                            btn.href = statusData.download_url;
+                            btn.onclick = null; // Remove handler
 
-                                // Update player source and play
-                                const videoPreview = document.getElementById('videoPreview');
-                                videoPreview.src = statusData.download_url;
-                                videoPreview.classList.remove('hidden');
-                                videoPreview.muted = false; // Unmute for HQ playback
-                                videoPreview.scrollIntoView({ behavior: 'smooth' });
-
-                                try {
-                                    await videoPreview.play();
-                                } catch (e) {
-                                    console.log("Auto-play blocked:", e);
-                                }
-                            } else {
-                                // Download Logic
-                                btn.innerText = "Download Ready - Click to Save";
-                                btn.href = statusData.download_url;
-                                btn.onclick = null; // Remove handler
-
-                                // Auto trigger download
-                                window.open(statusData.download_url, '_blank');
-                            }
+                            // Auto trigger download
+                            window.open(statusData.download_url, '_blank');
 
                             btn.style.pointerEvents = "auto";
                             btn.style.opacity = "1";
-
-                            if (!isPlay) {
-                                btn.style.background = "#fff";
-                                btn.style.color = "#000";
-                            }
+                            btn.style.background = "#fff";
+                            btn.style.color = "#000";
                         } else if (statusData.status === 'failed') {
                             clearInterval(pollInterval);
                             throw new Error(statusData.error || "Processing failed");

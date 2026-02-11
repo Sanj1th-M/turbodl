@@ -54,17 +54,28 @@ body {
 }
 
 h1 {
-    font-family: "Aboreto", system-ui;
-    font-weight: 400;
+    font-family: "Plaster", system-ui;
+    font-weight: 600;
     font-style: normal;
-    text-transform: uppercase;
-    font-size: 2.5rem;
-    margin-bottom: 2rem;
-    letter-spacing: -1px;
-    background: linear-gradient(to right, #fff, #888);
+    font-size: 3.5rem;
+    margin-bottom: 3rem;
+    letter-spacing: 0px;
+    background: linear-gradient(90deg, #666 0%, #fff 40%, #fff 60%, #666 100%);
+    background-size: 200% 100%;
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
+    animation: shine 3s linear infinite;
+}
+
+@keyframes shine {
+    0% {
+        background-position: -200% 0;
+    }
+
+    100% {
+        background-position: 200% 0;
+    }
 }
 
 p {
@@ -145,27 +156,134 @@ button:disabled {
     }
 }
 
+/* ===== RESULT CARD - SPLIT LAYOUT ===== */
 #result {
     margin-top: 30px;
-    padding: 20px;
+    padding: 0;
+    background: transparent;
+    border-radius: 0;
+    border: none;
+}
+
+/* Split Container */
+.result-split-container {
+    display: flex;
+    flex-direction: column;
+    /* Mobile: Stack vertically */
+    gap: 20px;
     background: #000000;
     border-radius: 12px;
     border: 1px solid #222;
+    overflow: hidden;
+}
+
+/* Desktop: Side-by-side layout */
+@media (min-width: 768px) {
+    .result-split-container {
+        flex-direction: row;
+        min-height: 450px;
+    }
+}
+
+/* Left Column: Video Player (55% width on desktop) */
+.result-left-column {
+    flex: 1 1 100%;
+    /* Mobile: Full width */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #0a0a0a;
+    padding: 20px;
+}
+
+@media (min-width: 768px) {
+    .result-left-column {
+        flex: 1 1 55%;
+        /* Desktop: 55% width */
+        border-right: 1px solid #222;
+    }
+}
+
+/* Video Stage */
+.video-stage {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, rgba(0, 255, 157, 0.03) 0%, rgba(0, 255, 157, 0.01) 100%);
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    min-height: 250px;
+}
+
+@media (min-width: 768px) {
+    .video-stage {
+        min-height: 400px;
+    }
 }
 
 video {
     width: 100%;
+    height: 100%;
     border-radius: 8px;
-    margin-top: 15px;
-    max-height: 400px;
+    object-fit: contain;
+    background: #000;
 }
 
+/* Right Column: Controls (45% width on desktop) */
+.result-right-column {
+    flex: 1 1 100%;
+    /* Mobile: Full width */
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    overflow-y: auto;
+    /* Scrollable if content overflows */
+    max-height: 500px;
+}
+
+@media (min-width: 768px) {
+    .result-right-column {
+        flex: 1 1 45%;
+        /* Desktop: 45% width */
+        max-height: 450px;
+    }
+}
+
+/* Video Title */
+#videoTitle {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #fff;
+    margin: 0 0 15px 0;
+    padding-bottom: 15px;
+    border-bottom: 1px solid #222;
+    line-height: 1.4;
+}
+
+/* Actions/Download Buttons Container */
 .actions {
     display: flex;
-    flex-wrap: wrap;
+    flex-direction: column;
     gap: 10px;
-    justify-content: center;
-    margin-bottom: 20px;
+    margin-bottom: 10px;
+}
+
+/* Video Grid Layout (Multiple Video Qualities) */
+.actions.video-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 10px;
+}
+
+/* Audio Row Layout (Audio buttons in a row) */
+.actions.audio-row {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 8px;
 }
 
 .btn-download,
