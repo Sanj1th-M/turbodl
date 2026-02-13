@@ -157,17 +157,17 @@ async def download_video(request: Request, body: DownloadRequest):
                 'quiet': True,
                 'no_warnings': True,
                 'no_playlist': True,
-                # Try to use mobile web client which often has fewer bot checks
+                # Impersonate YouTube TV clients - these are often the last to be blocked
                 'extractor_args': {
                     'youtube': {
-                        'player_client': ['web', 'mweb'],
+                        'player_client': ['tv', 'tv_embedded', 'ios', 'android'],
+                        'skip': ['webpage', 'hls', 'dash'],
                     }
                 },
                 'http_headers': {
-                    'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                    'Accept-Language': 'en-us,en;q=0.5',
-                    'Sec-Fetch-Mode': 'navigate',
+                    'Accept-Language': 'en-US,en;q=0.9',
                 }
             }
             
@@ -175,8 +175,20 @@ async def download_video(request: Request, body: DownloadRequest):
                 ydl_opts['cookiefile'] = cookie_path
                 logger.info("Using authenticated cookies for request.")
 
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(safe_url, download=False)
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(safe_url, download=False)
+            except Exception as e:
+                error_str = str(e)
+                if "Sign in to confirm you're not a bot" in error_str:
+                    logger.error("YouTube blocked Vercel IP: Bot detection triggered.")
+                    raise HTTPException(
+                        status_code=403, 
+                        detail="YouTube is blocking this server's IP address. "
+                               "To fix this, you may need to provide 'YOUTUBE_COOKIES' in your Vercel Environment Variables, "
+                               "or use a Proxy service."
+                    )
+                raise e
         finally:
             if cookie_path and os.path.exists(cookie_path):
                 try:
