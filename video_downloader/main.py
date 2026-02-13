@@ -184,6 +184,8 @@ async def download_video(request: Request, body: DownloadRequest):
             if proxy_url:
                 ydl_opts['proxy'] = proxy_url
                 logger.info(f"Using proxy for extraction.")
+            else:
+                logger.warning("No proxy detected in environment.")
             
             if cookie_path:
                 ydl_opts['cookiefile'] = cookie_path
@@ -193,14 +195,17 @@ async def download_video(request: Request, body: DownloadRequest):
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     info = ydl.extract_info(safe_url, download=False)
             except Exception as e:
-                error_str = str(e)
-                if "Sign in to confirm you're not a bot" in error_str:
+                error_str = str(e).lower()
+                if "sign in to confirm you're not a bot" in error_str:
                     logger.error("YouTube blocked Vercel IP: Bot detection triggered.")
-                    msg = "YouTube is blocking this server. "
+                    
+                    status_info = " [Key Detected]" if scraper_key else " [NO KEY DETECTED]"
+                    msg = f"YouTube is STILL blocking this server.{status_info} "
+                    
                     if not (proxy_url or cookie_path):
-                        msg += "Action Required: Add 'SCRAPER_API_KEY' or 'YOUTUBE_COOKIES' to Vercel Environment Variables."
+                        msg += "IMPORTANT: You must go to the 'Deployments' tab in Vercel and 'Redeploy' for your key to work."
                     else:
-                        msg += "The provided Proxy/Cookies may be expired or blocked."
+                        msg += "The ScraperAPI key may be invalid or out of credits."
                     
                     raise HTTPException(status_code=403, detail=msg)
                 raise e
