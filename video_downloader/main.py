@@ -157,17 +157,20 @@ async def download_video(request: Request, body: DownloadRequest):
                 'quiet': True,
                 'no_warnings': True,
                 'no_playlist': True,
-                # Impersonate YouTube TV clients - these are often the last to be blocked
+                # Enforce IPv4 (Vercel IPv6 is almost always blocked)
+                'source_address': '0.0.0.0',
+                # Use ONLY the iOS client with a matching User-Agent
+                # This is currently the most stable way to bypass bot checks
                 'extractor_args': {
                     'youtube': {
-                        'player_client': ['tv', 'tv_embedded', 'ios', 'android'],
-                        'skip': ['webpage', 'hls', 'dash'],
+                        'player_client': ['ios'],
                     }
                 },
                 'http_headers': {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'User-Agent': 'com.google.ios.youtube/19.05.6 (iPhone16,2; U; CPU iOS 17_3_1 like Mac OS X; en_US)',
+                    'Accept': '*/*',
                     'Accept-Language': 'en-US,en;q=0.9',
+                    'Origin': 'https://www.youtube.com',
                 }
             }
             
