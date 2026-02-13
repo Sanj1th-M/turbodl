@@ -23,7 +23,11 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 # Import Security Layer
-from security import validate_url, sanitize_filename, safe_subprocess_run, logger as sec_logger
+try:
+    from .security import validate_url, sanitize_filename, safe_subprocess_run, logger as sec_logger
+except ImportError:
+    # Fallback for direct execution
+    from security import validate_url, sanitize_filename, safe_subprocess_run, logger as sec_logger
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
