@@ -1,51 +1,32 @@
+from http.server import BaseHTTPRequestHandler
 import sys
 import os
-import traceback
+import pkg_resources
 
-# Add the project root to sys.path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-
-# Fail-safe ASGI handler
-async def fallback_handler(scope, receive, send):
-    """Raw ASGI handler to display errors when FastAPI fails to load."""
-    if scope['type'] != 'http':
-        return
+class handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/plain')
+        self.end_headers()
         
-    error_msg = "Unknown Error"
-    try:
-        # Re-raise the exception to get the traceback
-        raise StartupException
-    except:
-         error_msg = traceback.format_exc()
+        output = []
+        output.append("--- Vercel Diagnostic ---")
+        output.append("Status: Running")
+        output.append(f"CWD: {os.getcwd()}")
+        output.append(f"Sys Path: {sys.path}")
+        
+        output.append("\n--- Installed Packages ---")
+        try:
+            installed_packages = [f"{d.project_name}=={d.version}" for d in pkg_resources.working_set]
+            output.extend(installed_packages)
+        except Exception as e:
+            output.append(f"Error listing packages: {e}")
+            
+        output.append("\n--- Import Check ---")
+        try:
+            import video_downloader.main
+            output.append("SUCCESS: Imported video_downloader.main")
+        except Exception as e:
+            output.append(f"FAILURE: Could not import video_downloader.main\n{e}")
 
-    await send({
-        'type': 'http.response.start',
-        'status': 500,
-        'headers': [
-            [b'content-type', b'text/plain'],
-        ],
-    })
-    await send({
-        'type': 'http.response.body',
-        'body': f"CRITICAL VERCEL STARTUP ERROR:\n\n{error_msg}".encode('utf-8'),
-    })
-
-StartupException = None
-
-try:
-    # Try to import the actual app
-    from video_downloader.main import app
-    handler = app
-    
-except Exception as e:
-    StartupException = e
-    # Use the fallback raw ASGI handler
-    handler = fallback_handler
-
-# Verify requirements were actually installed
-try:
-    import fastapi
-    import yt_dlp
-except ImportError as e:
-    StartupException = e
-    handler = fallback_handler
+        self.wfile.write("\n".join(output).encode('utf-8'))
