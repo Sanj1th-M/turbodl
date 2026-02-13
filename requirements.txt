@@ -1,11 +1,11 @@
-fastapi
-uvicorn
-yt-dlp
-requests
-ffmpeg-python
-jinja2
-dnspython
-python-dotenv
-slowapi
-pydantic
-
+# requirements.txt cleared for debugging
+# fastapi
+# uvicorn
+# yt-dlp
+# requests
+# ffmpeg-python
+# jinja2
+# dnspython
+# python-dotenv
+# slowapi
+# pydantic
