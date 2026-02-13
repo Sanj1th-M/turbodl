@@ -1,7 +1,7 @@
 import sys
 import os
 
-def handler(environ, start_response):
+def app(environ, start_response):
     status = '200 OK'
     output = "Vercel Python Execution Verified!\n"
     output += f"Python Version: {sys.version}\n"

@@ -2,7 +2,7 @@
 # fastapi
 # uvicorn
 # yt-dlp
-# requests
+requests
 # ffmpeg-python
 # jinja2
 # dnspython
