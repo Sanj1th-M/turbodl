@@ -51,27 +51,29 @@ import tempfile
 # Use system temp directory for Vercel/Cloud compatibility
 TEMP_DIR = os.path.join(tempfile.gettempdir(), "turbo_dl_temp")
 
-# Detect FFMPEG (cross-platform: Windows and Linux/Termux)
-local_ffmpeg_win = os.path.join(os.getcwd(), "ffmpeg.exe")  # Windows
-local_ffmpeg_unix = os.path.join(os.getcwd(), "ffmpeg")     # Linux/Termux
+# FFMPEG Detection (defensive for Vercel)
+def get_ffmpeg_path():
+    local_ffmpeg_win = os.path.join(os.path.dirname(__file__), "ffmpeg.exe")
+    local_ffmpeg_unix = os.path.join(os.path.dirname(__file__), "ffmpeg")
+    
+    if os.path.exists(local_ffmpeg_win):
+        return local_ffmpeg_win
+    if os.path.exists(local_ffmpeg_unix):
+        return local_ffmpeg_unix
+    return "ffmpeg" # Fallback to system path
 
-if os.path.exists(local_ffmpeg_win):
-    FFMPEG_PATH = local_ffmpeg_win
-elif os.path.exists(local_ffmpeg_unix):
-    FFMPEG_PATH = local_ffmpeg_unix
-else:
-    FFMPEG_PATH = "ffmpeg"  # Expect in system PATH
-
-# Ensure temp dir exists
-os.makedirs(TEMP_DIR, exist_ok=True)
+FFMPEG_PATH = get_ffmpeg_path()
 
 @app.on_event("startup")
 async def startup_event():
-    # Clean up temp directory on startup
-    if os.path.exists(TEMP_DIR):
-        shutil.rmtree(TEMP_DIR)
-    os.makedirs(TEMP_DIR, exist_ok=True)
-    logger.info("Startup complete: Temp directory cleaned.")
+    # Defensive directory creation for Vercel
+    try:
+        if os.path.exists(TEMP_DIR):
+            shutil.rmtree(TEMP_DIR, ignore_errors=True)
+        os.makedirs(TEMP_DIR, exist_ok=True)
+        logger.info(f"Startup complete: Temp directory initialized at {TEMP_DIR}")
+    except Exception as e:
+        logger.warning(f"Non-critical startup error: {e}")
 
 # Rate Limiting Setup
 limiter = Limiter(key_func=get_remote_address)
