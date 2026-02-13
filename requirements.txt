@@ -8,4 +8,4 @@ dnspython
 python-dotenv
 slowapi
 pydantic
-ffmpeg
+
