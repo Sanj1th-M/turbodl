@@ -160,7 +160,6 @@ async def download_video(request: Request, body: DownloadRequest):
                 # Enforce IPv4 (Vercel IPv6 is almost always blocked)
                 'source_address': '0.0.0.0',
                 # Use ONLY the iOS client with a matching User-Agent
-                # This is currently the most stable way to bypass bot checks
                 'extractor_args': {
                     'youtube': {
                         'player_client': ['ios'],
@@ -173,6 +172,18 @@ async def download_video(request: Request, body: DownloadRequest):
                     'Origin': 'https://www.youtube.com',
                 }
             }
+
+            # --- PROXY / SCRAPER API SUPPORT ---
+            proxy_url = os.environ.get("PROXY_URL")
+            scraper_key = os.environ.get("SCRAPER_API_KEY")
+            
+            if scraper_key:
+                # ScraperAPI Proxy Integration
+                proxy_url = f"http://scraperapi:{scraper_key}@proxy-server.scraperapi.com:8001"
+            
+            if proxy_url:
+                ydl_opts['proxy'] = proxy_url
+                logger.info(f"Using proxy for extraction.")
             
             if cookie_path:
                 ydl_opts['cookiefile'] = cookie_path
@@ -185,12 +196,13 @@ async def download_video(request: Request, body: DownloadRequest):
                 error_str = str(e)
                 if "Sign in to confirm you're not a bot" in error_str:
                     logger.error("YouTube blocked Vercel IP: Bot detection triggered.")
-                    raise HTTPException(
-                        status_code=403, 
-                        detail="YouTube is blocking this server's IP address. "
-                               "To fix this, you may need to provide 'YOUTUBE_COOKIES' in your Vercel Environment Variables, "
-                               "or use a Proxy service."
-                    )
+                    msg = "YouTube is blocking this server. "
+                    if not (proxy_url or cookie_path):
+                        msg += "Action Required: Add 'SCRAPER_API_KEY' or 'YOUTUBE_COOKIES' to Vercel Environment Variables."
+                    else:
+                        msg += "The provided Proxy/Cookies may be expired or blocked."
+                    
+                    raise HTTPException(status_code=403, detail=msg)
                 raise e
         finally:
             if cookie_path and os.path.exists(cookie_path):
