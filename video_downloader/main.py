@@ -41,8 +41,11 @@ async def add_security_headers(request: Request, call_next):
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     return response
 
+import tempfile
+
 # Constants
-TEMP_DIR = "temp_downloads"
+# Use system temp directory for Vercel/Cloud compatibility
+TEMP_DIR = os.path.join(tempfile.gettempdir(), "turbo_dl_temp")
 
 # Detect FFMPEG (cross-platform: Windows and Linux/Termux)
 local_ffmpeg_win = os.path.join(os.getcwd(), "ffmpeg.exe")  # Windows
