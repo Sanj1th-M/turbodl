@@ -47,7 +47,6 @@ A secure and efficient video downloader application built with FastAPI, yt-dlp, 
     cd video_downloader
     ```
 
-2.  (Optional) Create a `.env` file if you have specific configurations (currently none required for basic usage).
 
 ## Running the Application
 
