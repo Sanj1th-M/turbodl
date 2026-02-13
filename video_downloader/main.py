@@ -89,6 +89,23 @@ templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "t
 # Jobs storage (In-memory for simplicity)
 processing_jobs: Dict[str, Dict] = {}
 
+# Helper to write cookies from environment variable to a file
+def get_cookies_path():
+    """Reads YOUTUBE_COOKIES env var and writes to a temp file for yt-dlp."""
+    cookies_content = os.environ.get("YOUTUBE_COOKIES")
+    if not cookies_content:
+        return None
+        
+    try:
+        # Create a unique temp file for cookies
+        cookie_file = os.path.join(TEMP_DIR, f"youtube_cookies_{uuid.uuid4().hex[:8]}.txt")
+        with open(cookie_file, "w", encoding='utf-8') as f:
+            f.write(cookies_content)
+        return cookie_file
+    except Exception as e:
+        logger.error(f"Failed to create cookies file: {e}")
+        return None
+
 # Helper to clean up old files
 def cleanup_file(path: str):
     try:
@@ -134,14 +151,38 @@ async def download_video(request: Request, body: DownloadRequest):
     
     try:
         # Use yt-dlp to get video info
-        ydl_opts = {
-            'quiet': True,
-            'no_warnings': True,
-            'no_playlist': True,
-        }
-        
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(safe_url, download=False)
+        cookie_path = get_cookies_path()
+        try:
+            ydl_opts = {
+                'quiet': True,
+                'no_warnings': True,
+                'no_playlist': True,
+                # Try to use mobile web client which often has fewer bot checks
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['web', 'mweb'],
+                    }
+                },
+                'http_headers': {
+                    'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'Accept-Language': 'en-us,en;q=0.5',
+                    'Sec-Fetch-Mode': 'navigate',
+                }
+            }
+            
+            if cookie_path:
+                ydl_opts['cookiefile'] = cookie_path
+                logger.info("Using authenticated cookies for request.")
+
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(safe_url, download=False)
+        finally:
+            if cookie_path and os.path.exists(cookie_path):
+                try:
+                    os.remove(cookie_path)
+                except:
+                    pass
         
         title = info.get('title', 'Unknown Video')
         formats_raw = info.get('formats', [])
